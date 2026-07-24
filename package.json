@@ -1,0 +1,62 @@
+{
+  "name": "readme-drift-detector",
+  "displayName": "README Drift Detector",
+  "description": "Flags exported functions/classes that aren't mentioned in your README, so docs stop drifting from the code.",
+  "version": "0.1.0",
+  "publisher": "your-publisher-name",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "Linters"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "readmeDrift.check",
+        "title": "Check README Drift",
+        "category": "README Drift"
+      }
+    ],
+    "configuration": {
+      "title": "README Drift Detector",
+      "properties": {
+        "readmeDrift.include": {
+          "type": "string",
+          "default": "**/*.{ts,tsx,js,jsx,py}",
+          "description": "Glob pattern for source files to scan for exported symbols."
+        },
+        "readmeDrift.exclude": {
+          "type": "string",
+          "default": "**/{node_modules,out,dist,build,.git,venv,.venv,__pycache__}/**",
+          "description": "Glob pattern for files/folders to ignore."
+        },
+        "readmeDrift.readmePath": {
+          "type": "string",
+          "default": "README.md",
+          "description": "Path (relative to the workspace root) of the README file to check against."
+        },
+        "readmeDrift.scanOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically re-scan when a source file or the README is saved."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.4.0"
+  }
+}
