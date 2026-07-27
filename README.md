@@ -10,6 +10,13 @@ current score at a glance.
 Everything here runs against `git log`/`git blame` output and the files
 in your workspace — no network calls.
 
+**[Get it on the VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=antoniaadelina.repo-health)**
+— or search **"Repo Health"** in VS Code's Extensions panel.
+
+> Published under the `antoniaadelina` publisher account
+> (antoniaadelina94@gmail.com) — reach out there for support/issues, or
+> use the GitHub issue tracker linked below.
+
 ![Dashboard overview](images/dashboard-overview.png)
 
 ## Features
