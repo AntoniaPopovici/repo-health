@@ -155,7 +155,7 @@ function renderDrift(drift: ReadmeDriftResult): string {
   for (const item of drift.undocumented) {
     rows.push(`<div class="row-split">
       <span class="row-symbol">${escapeHtml(item.name)}</span>
-      <span class="pill pill-gray">undocumented</span>
+      <span class="pill pill-gray">undocumented ${item.kind}</span>
     </div>`);
   }
   for (const item of drift.stale) {

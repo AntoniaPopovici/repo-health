@@ -103,18 +103,27 @@ nothing. Dropped in favor of the batch scan, which works for everyone.
 
 ### README drift detector (`src/modules/readmeDrift.ts`)
 
-- Parses exported functions/classes/consts from `.ts`/`.tsx`/`.js`/`.jsx`
-  (regex on `export function`, `export class`, `export const/let/var`,
-  `export { ... }`) and top-level `def`/`class` in `.py` files — see
-  `src/scanners/`. Not a real AST parser.
-- Two kinds of drift, from different candidate sets so ordinary prose
-  doesn't generate noise:
-  - **Undocumented**: an exported symbol whose name never appears
-    anywhere in the README as a whole word.
-  - **Stale**: narrower — only names that look like a function call
-    (`` `parseConfig(` ``) or an npm script (`` npm run build ``) inside
-    a README code span/fenced block, with no matching export or
-    `package.json` script left.
+No README convention actually expects every exported function to get a
+mention — a full function inventory isn't a real signal of doc quality,
+just noise (checked this against real README guides before landing on
+this design). What a README's Features/Configuration/Getting Started
+sections *are* expected to cover is the project's actual user-facing
+surface. For a VS Code extension, that's what `package.json` itself
+declares:
+
+- **Undocumented**: a `contributes.commands` entry or
+  `contributes.configuration` setting whose id (or command title) never
+  appears anywhere in the README.
+- **Stale**: a script, function call, command id, or setting key
+  mentioned in a README code span/fenced block that no longer
+  corresponds to anything real — `package.json` script, exported symbol
+  (regex-scanned the same way as the drift checks used to work, still
+  useful for catching a stale code example), declared command, or
+  setting.
+
+On a project with no `contributes` block (not a VS Code extension), the
+command/setting checks simply produce nothing, so this still works as a
+plain script/function drift check for other kinds of projects.
 
 ### Stale TODOs (`src/modules/staleTodos.ts`)
 

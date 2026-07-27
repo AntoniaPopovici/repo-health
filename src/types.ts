@@ -22,20 +22,18 @@ export interface CommitLintResult {
   hint?: string;
 }
 
-export interface UndocumentedSymbol {
+export interface UndocumentedItem {
   name: string;
-  kind: ExportedSymbol['kind'];
-  file: string;
-  line: number;
+  kind: 'command' | 'setting';
 }
 
 export interface StaleReadmeMention {
   name: string;
-  reason: 'script removed' | 'function removed';
+  reason: 'script removed' | 'function removed' | 'command/setting removed';
 }
 
 export interface ReadmeDriftResult {
-  undocumented: UndocumentedSymbol[];
+  undocumented: UndocumentedItem[];
   stale: StaleReadmeMention[];
 }
 

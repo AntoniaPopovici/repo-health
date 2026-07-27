@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { scanTsJsFile } from '../scanners/tsExports';
 import { scanPyFile } from '../scanners/pyExports';
-import { ExportedSymbol, ReadmeDriftResult, StaleReadmeMention, UndocumentedSymbol } from '../types';
+import { ExportedSymbol, ReadmeDriftResult, StaleReadmeMention, UndocumentedItem } from '../types';
 
 const TS_JS_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx']);
 
@@ -13,14 +13,32 @@ const CODE_KEYWORDS = new Set([
   'async', 'import', 'export', 'class', 'print', 'len', 'range', 'str', 'int', 'list', 'dict'
 ]);
 
-// Compares exported symbols against what README.md mentions.
-// "Undocumented": an exported symbol whose name never appears anywhere in
-// the README as a whole word (broad match, so it doesn't matter how the
-// README phrases things, just whether the name shows up).
-// "Stale": narrower — only names that look like a function call or an npm
-// script inside a README code span/fenced block, with no matching export
-// or package.json script left. Narrower on purpose, so ordinary prose
-// doesn't get flagged as a stale reference.
+interface PackageManifest {
+  scripts?: Record<string, string>;
+  contributes?: {
+    commands?: Array<{ command: string; title?: string }>;
+    configuration?: { properties?: Record<string, unknown> };
+  };
+}
+
+/**
+ * README drift for a VS Code extension isn't really about whether every
+ * exported TS function got a mention — no README convention expects a
+ * full function inventory, and flagging that way is mostly noise. What a
+ * README's Features/Configuration/Getting Started sections *are* expected
+ * to cover is the project's actual declared user-facing surface: its
+ * commands and settings (`contributes.commands` /
+ * `contributes.configuration` in package.json). So:
+ *
+ * - "Undocumented": a declared command or setting whose id (or command
+ *   title) never appears anywhere in the README.
+ * - "Stale": a script/function/command/setting mentioned in a README code
+ *   span/fenced block that no longer corresponds to anything real.
+ *
+ * On a project with no `contributes` block (i.e. not a VS Code
+ * extension), the command/setting checks simply produce nothing — this
+ * still works as a plain script/function drift check for other projects.
+ */
 export async function scanReadmeDrift(
   workspaceRoot: vscode.Uri,
   include: string,
@@ -35,18 +53,30 @@ export async function scanReadmeDrift(
   const readmeBytes = await vscode.workspace.fs.readFile(readmeUris[0]);
   const readmeText = Buffer.from(readmeBytes).toString('utf8');
 
-  const symbols = await collectExportedSymbols(include, exclude);
-  const documentedWords = buildWordSet(readmeText);
+  const pkg = await readPackageManifest(workspaceRoot);
+  const scriptNames = new Set(Object.keys(pkg?.scripts ?? {}));
+  const commands = pkg?.contributes?.commands ?? [];
+  const commandIds = new Set(commands.map((c) => c.command));
+  const settingKeys = new Set(Object.keys(pkg?.contributes?.configuration?.properties ?? {}));
 
-  const undocumented: UndocumentedSymbol[] = symbols
-    .filter((symbol) => !documentedWords.has(symbol.name))
-    .map(({ name, kind, file, line }) => ({ name, kind, file, line }));
+  const exportedNames = new Set((await collectExportedSymbols(include, exclude)).map((s) => s.name));
 
-  const exportedNames = new Set(symbols.map((symbol) => symbol.name));
-  const scriptNames = await getPackageScriptNames(workspaceRoot);
+  const undocumented: UndocumentedItem[] = [];
+  for (const cmd of commands) {
+    const mentioned = readmeText.includes(cmd.command) || (!!cmd.title && readmeText.includes(cmd.title));
+    if (!mentioned) {
+      undocumented.push({ name: cmd.command, kind: 'command' });
+    }
+  }
+  for (const key of settingKeys) {
+    if (!readmeText.includes(key)) {
+      undocumented.push({ name: key, kind: 'setting' });
+    }
+  }
+
   const codeSpans = extractCodeSpans(readmeText);
-
   const stale: StaleReadmeMention[] = [];
+
   for (const name of extractFunctionCallCandidates(codeSpans)) {
     if (!exportedNames.has(name)) {
       stale.push({ name, reason: 'function removed' });
@@ -55,6 +85,14 @@ export async function scanReadmeDrift(
   for (const name of extractScriptCandidates(codeSpans)) {
     if (!scriptNames.has(name)) {
       stale.push({ name, reason: 'script removed' });
+    }
+  }
+
+  const knownPrefixes = new Set([...commandIds, ...settingKeys].map((id) => id.split('.')[0]).filter(Boolean));
+  for (const name of extractNamespacedCandidates(codeSpans)) {
+    const prefix = name.split('.')[0];
+    if (knownPrefixes.has(prefix) && !commandIds.has(name) && !settingKeys.has(name)) {
+      stale.push({ name, reason: 'command/setting removed' });
     }
   }
 
@@ -78,16 +116,6 @@ async function collectExportedSymbols(include: string, exclude: string): Promise
   }
 
   return symbols;
-}
-
-function buildWordSet(text: string): Set<string> {
-  const words = new Set<string>();
-  const wordRe = /[A-Za-z_$][\w$]*/g;
-  let match: RegExpExecArray | null;
-  while ((match = wordRe.exec(text)) !== null) {
-    words.add(match[0]);
-  }
-  return words;
 }
 
 function extractCodeSpans(readme: string): string[] {
@@ -134,13 +162,26 @@ function extractScriptCandidates(spans: string[]): Set<string> {
   return names;
 }
 
-async function getPackageScriptNames(workspaceRoot: vscode.Uri): Promise<Set<string>> {
+// Dotted identifiers like `repoHealth.showDashboard` — the shape a
+// command id or setting key takes when someone writes it in backticks.
+function extractNamespacedCandidates(spans: string[]): Set<string> {
+  const names = new Set<string>();
+  for (const span of spans) {
+    const re = /\b([A-Za-z][\w]*(?:\.[A-Za-z][\w]*)+)\b/g;
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(span)) !== null) {
+      names.add(match[1]);
+    }
+  }
+  return names;
+}
+
+async function readPackageManifest(workspaceRoot: vscode.Uri): Promise<PackageManifest | undefined> {
   try {
     const pkgUri = vscode.Uri.joinPath(workspaceRoot, 'package.json');
     const bytes = await vscode.workspace.fs.readFile(pkgUri);
-    const pkg = JSON.parse(Buffer.from(bytes).toString('utf8'));
-    return new Set(Object.keys(pkg.scripts ?? {}));
+    return JSON.parse(Buffer.from(bytes).toString('utf8'));
   } catch {
-    return new Set();
+    return undefined;
   }
 }
