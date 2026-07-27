@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:;" />
+<title>Repo Health</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel-bg: #161b22;
+    --panel-header-bg: #010409;
+    --border: #30363d;
+    --border-muted: #21262d;
+    --text: #e6edf3;
+    --text-secondary: #c9d1d9;
+    --text-muted: #8b949e;
+    --text-faint: #6e7681;
+    --green: #3fb950;
+    --red: #f85149;
+    --yellow: #d29922;
+    --purple: #a371f7;
+    --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text-secondary);
+    font-family: var(--font-ui);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  .header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .header .icon {
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    background: var(--purple);
+  }
+
+  .header h1 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+    margin: 0;
+  }
+
+  .header .repo-name {
+    color: var(--text-muted);
+    font-weight: 400;
+  }
+
+  .content {
+    padding: 20px;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+
+  .score-row {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+
+  .card {
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px;
+  }
+
+  .gauge-card {
+    flex: 1.2;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .gauge {
+    width: 84px;
+    height: 84px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .gauge-inner {
+    width: 66px;
+    height: 66px;
+    border-radius: 50%;
+    background: var(--panel-bg);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .gauge-score {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .gauge-label {
+    font-size: 10px;
+    color: var(--text-muted);
+  }
+
+  .gauge-meta .title {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+  }
+
+  .gauge-meta .trend {
+    font-size: 12px;
+  }
+
+  .stat-card {
+    flex: 1;
+  }
+
+  .stat-card .title {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    margin-bottom: 8px;
+  }
+
+  .stat-card .value {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .section {
+    margin-bottom: 22px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    background: var(--panel-header-bg);
+    border-bottom: 1px solid var(--border-muted);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.6;
+    white-space: nowrap;
+  }
+
+  .pill-red { color: var(--red); background: rgba(248,81,73,0.1); border: 1px solid rgba(248,81,73,0.4); }
+  .pill-yellow { color: var(--yellow); background: rgba(210,153,34,0.1); border: 1px solid rgba(210,153,34,0.4); }
+  .pill-green { color: var(--green); background: rgba(63,185,80,0.1); border: 1px solid rgba(63,185,80,0.4); }
+  .pill-purple { color: var(--purple); background: rgba(163,113,247,0.1); border: 1px solid rgba(163,113,247,0.4); }
+  .pill-gray { color: var(--text-muted); background: rgba(139,148,158,0.1); border: 1px solid rgba(139,148,158,0.4); }
+
+  .row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border-muted);
+  }
+
+  .row:last-child { border-bottom: none; }
+
+  .row-split {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border-muted);
+  }
+
+  .row-split:last-child { border-bottom: none; }
+
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-top: 5px;
+    flex-shrink: 0;
+  }
+
+  .dot-red { background: var(--red); }
+  .dot-yellow { background: var(--yellow); }
+  .dot-green { background: var(--green); }
+
+  .row-main {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .row-text {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    color: var(--text-secondary);
+    overflow-wrap: anywhere;
+  }
+
+  .row-hint {
+    font-style: italic;
+    font-size: 11.5px;
+    color: var(--text-muted);
+    margin-top: 3px;
+  }
+
+  .row-hint.danger { color: var(--red); }
+
+  .row-symbol {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    color: var(--text-secondary);
+  }
+
+  .row-badge {
+    flex-shrink: 0;
+  }
+
+  .empty-row {
+    padding: 16px 14px;
+    color: var(--text-faint);
+    font-size: 12px;
+    font-style: italic;
+  }
+
+  .onboarding-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+  }
+
+  .onboarding-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border-muted);
+    font-size: 12.5px;
+  }
+
+  .onboarding-item .mark {
+    font-family: var(--font-mono);
+    width: 14px;
+    text-align: center;
+    flex-shrink: 0;
+  }
+
+  .onboarding-item.present .mark { color: var(--green); }
+  .onboarding-item.missing .mark { color: var(--text-faint); }
+  .onboarding-item.missing .label { color: var(--text-faint); }
+
+  .sparkline-wrap {
+    margin-top: 6px;
+    line-height: 0;
+  }
+
+  svg.sparkline {
+    display: block;
+  }
+
+  .trends-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    background: var(--border-muted);
+  }
+
+  .trend-card {
+    background: var(--panel-bg);
+    padding: 12px 14px 14px;
+  }
+
+  .trend-title {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    margin-bottom: 10px;
+  }
+
+  .heat-strip {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 44px;
+  }
+
+  .heat-bar {
+    flex: 1;
+    min-width: 3px;
+    border-radius: 2px 2px 0 0;
+  }
+
+  .hist-chart {
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    height: 44px;
+  }
+
+  .hist-bar {
+    flex: 1;
+    background: var(--purple);
+    border-radius: 2px 2px 0 0;
+    min-height: 2px;
+  }
+
+  .hist-range {
+    margin-top: 6px;
+    font-size: 10.5px;
+    color: var(--text-faint);
+    text-align: center;
+  }
+
+  .compare-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+    font-size: 11.5px;
+  }
+
+  .compare-label {
+    width: 92px;
+    flex-shrink: 0;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .compare-track {
+    flex: 1;
+    height: 8px;
+    border-radius: 4px;
+    background: var(--border-muted);
+    overflow: hidden;
+  }
+
+  .compare-fill {
+    height: 100%;
+    border-radius: 4px;
+  }
+
+  .compare-fill.gray { background: var(--text-muted); }
+  .compare-fill.purple { background: var(--purple); }
+
+  .compare-value {
+    width: 26px;
+    flex-shrink: 0;
+    text-align: right;
+    color: var(--text-secondary);
+  }
+</style>
+</head>
+<body>
+  <div class="header">
+    <div class="icon"></div>
+    <h1>Repo Health <span class="repo-name">— {{REPO_NAME}}</span></h1>
+  </div>
+
+  <div class="content">
+    <div class="score-row">
+      <div class="card gauge-card">
+        <div class="gauge" style="background: {{RING_GRADIENT}};">
+          <div class="gauge-inner">
+            <div class="gauge-score">{{OVERALL_SCORE}}</div>
+            <div class="gauge-label">/ 100</div>
+          </div>
+        </div>
+        <div class="gauge-meta">
+          <div class="title">Overall health</div>
+          <div class="trend">{{TREND_TEXT}}</div>
+          <div class="sparkline-wrap">{{SCORE_SPARKLINE}}</div>
+        </div>
+      </div>
+      <div class="card stat-card">
+        <div class="title">Commit quality</div>
+        <div class="value">{{COMMIT_QUALITY_PCT}}%</div>
+      </div>
+      <div class="card stat-card">
+        <div class="title">Docs drift</div>
+        <div class="value">{{DOCS_DRIFT_COUNT}}</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">Trends</div>
+      <div class="trends-grid">
+        <div class="trend-card">
+          <div class="trend-title">Commit quality (recent)</div>
+          {{COMMIT_HEAT_STRIP}}
+        </div>
+        <div class="trend-card">
+          <div class="trend-title">Commits over time</div>
+          {{COMMIT_HISTOGRAM}}
+        </div>
+        <div class="trend-card">
+          <div class="trend-title">README drift breakdown</div>
+          {{DRIFT_BREAKDOWN}}
+        </div>
+        <div class="trend-card">
+          <div class="trend-title">File types</div>
+          {{FILE_TYPES}}
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">Recent commits {{COMMITS_BADGE}}</div>
+      {{COMMITS_ROWS}}
+    </div>
+
+    <div class="section">
+      <div class="section-header">README drift {{DRIFT_BADGE}}</div>
+      {{DRIFT_ROWS}}
+    </div>
+
+    <div class="section">
+      <div class="section-header">Stale TODOs {{TODOS_BADGE}}</div>
+      {{TODOS_ROWS}}
+    </div>
+
+    <div class="section">
+      <div class="section-header">Possible leaked secrets {{SECRETS_BADGE}}</div>
+      {{SECRETS_ROWS}}
+    </div>
+
+    <div class="section">
+      <div class="section-header">Onboarding checklist</div>
+      <div class="onboarding-grid">
+        {{ONBOARDING_GRID}}
+      </div>
+    </div>
+
+  </div>
+</body>
+</html>

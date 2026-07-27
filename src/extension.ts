@@ -1,176 +1,155 @@
 import * as vscode from 'vscode';
-import { scanTsJsFile } from './scanners/tsExports';
-import { scanPyFile } from './scanners/pyExports';
-import { buildDocumentedWordSet } from './readme';
-import { buildDiagnostics } from './diagnostics';
-import { ExportedSymbol } from './types';
+import { scanRecentCommits } from './modules/commitLinter';
+import { scanReadmeDrift } from './modules/readmeDrift';
+import { scanStaleTodos } from './modules/staleTodos';
+import { scanForLeakedSecrets } from './modules/secretScanner';
+import { scanOnboardingChecklist } from './modules/onboardingChecklist';
+import { scanFileTypeDistribution } from './modules/fileTypeStats';
+import { computeScore } from './scoring';
+import { RepoHealthPanel } from './webview/panel';
+import { isGitRepo } from './git';
+import { HealthScan, ScoreHistoryPoint } from './types';
 
-const TS_JS_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx']);
+const SCORE_HISTORY_KEY = 'repoHealth.scoreHistory';
+const MAX_HISTORY_POINTS = 30;
+const BACKGROUND_SCAN_DEBOUNCE_MS = 800;
 
-let diagnosticCollection: vscode.DiagnosticCollection;
 let statusBarItem: vscode.StatusBarItem;
-let outputChannel: vscode.OutputChannel;
 
 export function activate(context: vscode.ExtensionContext): void {
-  diagnosticCollection = vscode.languages.createDiagnosticCollection('readmeDrift');
-  outputChannel = vscode.window.createOutputChannel('README Drift');
-
   statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
-  statusBarItem.command = 'readmeDrift.check';
-  statusBarItem.text = '$(book) README Drift';
-  statusBarItem.tooltip = 'Check README Drift';
+  statusBarItem.command = 'repoHealth.showDashboard';
+  statusBarItem.text = '$(shield) Repo Health';
+  statusBarItem.tooltip = 'Click to scan and view the Repo Health dashboard';
   statusBarItem.show();
 
   context.subscriptions.push(
-    diagnosticCollection,
     statusBarItem,
-    outputChannel,
-    vscode.commands.registerCommand('readmeDrift.check', () => runCheck(true))
+    vscode.commands.registerCommand('repoHealth.showDashboard', () => runScan(context, { openPanel: true })),
+    vscode.commands.registerCommand('repoHealth.rescan', () => runScan(context, { openPanel: true }))
   );
 
-  registerWatchers(context);
+  registerBackgroundWatchers(context);
 
-  // Background scan shortly after startup, so we don't compete with other
-  // extensions activating at the same time.
-  setTimeout(() => runCheck(false), 1500);
+  // Populate the status bar shortly after startup, so it doesn't compete
+  // with other extensions activating at the same time.
+  setTimeout(() => runScan(context, { openPanel: false }), 1500);
 }
 
 export function deactivate(): void {
-  diagnosticCollection?.dispose();
   statusBarItem?.dispose();
 }
 
-function registerWatchers(context: vscode.ExtensionContext): void {
+function registerBackgroundWatchers(context: vscode.ExtensionContext): void {
+  const config = vscode.workspace.getConfiguration('repoHealth');
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
-  const scheduleCheck = () => {
-    if (!getConfig().get<boolean>('scanOnSave', true)) {
-      return;
-    }
+  const scheduleBackgroundScan = () => {
     if (debounceTimer) {
       clearTimeout(debounceTimer);
     }
-    debounceTimer = setTimeout(() => runCheck(false), 500);
+    debounceTimer = setTimeout(() => runScan(context, { openPanel: false }), BACKGROUND_SCAN_DEBOUNCE_MS);
   };
 
-  const sourceWatcher = vscode.workspace.createFileSystemWatcher(
-    getConfig().get<string>('include', '**/*.{ts,tsx,js,jsx,py}')
-  );
-  const readmeWatcher = vscode.workspace.createFileSystemWatcher(
-    `**/${getConfig().get<string>('readmePath', 'README.md')}`
-  );
-
-  for (const watcher of [sourceWatcher, readmeWatcher]) {
-    watcher.onDidChange(scheduleCheck);
-    watcher.onDidCreate(scheduleCheck);
-    watcher.onDidDelete(scheduleCheck);
-    context.subscriptions.push(watcher);
-  }
-
-  context.subscriptions.push(
-    vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration('readmeDrift')) {
-        runCheck(false);
-      }
-    })
-  );
-}
-
-function getConfig(): vscode.WorkspaceConfiguration {
-  return vscode.workspace.getConfiguration('readmeDrift');
-}
-
-async function runCheck(interactive: boolean): Promise<void> {
-  if (!vscode.workspace.workspaceFolders?.length) {
-    if (interactive) {
-      vscode.window.showInformationMessage('README Drift: open a folder/workspace first.');
-    }
-    return;
-  }
-
-  const config = getConfig();
   const include = config.get<string>('include', '**/*.{ts,tsx,js,jsx,py}');
-  const exclude = config.get<string>(
-    'exclude',
-    '**/{node_modules,out,dist,build,.git,venv,.venv,__pycache__}/**'
-  );
   const readmePath = config.get<string>('readmePath', 'README.md');
 
-  try {
-    const readmeUris = await vscode.workspace.findFiles(`**/${readmePath}`, exclude, 1);
-    if (readmeUris.length === 0) {
-      diagnosticCollection.clear();
-      updateStatusBar(undefined);
-      if (interactive) {
-        vscode.window.showWarningMessage(`README Drift: no ${readmePath} found in the workspace.`);
-      }
-      return;
+  const sourceWatcher = vscode.workspace.createFileSystemWatcher(include);
+  const readmeWatcher = vscode.workspace.createFileSystemWatcher(`**/${readmePath}`);
+  // Catches new commits and branch switches, not just source edits.
+  const gitHeadWatcher = vscode.workspace.createFileSystemWatcher('**/.git/HEAD');
+
+  for (const watcher of [sourceWatcher, readmeWatcher, gitHeadWatcher]) {
+    watcher.onDidChange(scheduleBackgroundScan);
+    watcher.onDidCreate(scheduleBackgroundScan);
+    watcher.onDidDelete(scheduleBackgroundScan);
+    context.subscriptions.push(watcher);
+  }
+}
+
+async function runScan(context: vscode.ExtensionContext, options: { openPanel: boolean }): Promise<void> {
+  const folder = vscode.workspace.workspaceFolders?.[0];
+  if (!folder) {
+    updateStatusBar(undefined);
+    if (options.openPanel) {
+      vscode.window.showInformationMessage('Repo Health: open a folder/workspace first.');
     }
+    return;
+  }
 
-    const readmeBytes = await vscode.workspace.fs.readFile(readmeUris[0]);
-    const documentedWords = buildDocumentedWordSet(Buffer.from(readmeBytes).toString('utf8'));
+  const panel = options.openPanel ? RepoHealthPanel.createOrShow(context.extensionUri) : RepoHealthPanel.currentPanel;
+  if (options.openPanel) {
+    panel?.showLoading(folder.name);
+  }
 
-    const sourceUris = await vscode.workspace.findFiles(include, exclude);
-    diagnosticCollection.clear();
-
-    let totalIssues = 0;
-    for (const uri of sourceUris) {
-      const symbols = await scanFile(uri);
-      if (symbols.length === 0) {
-        continue;
-      }
-      const diagnostics = buildDiagnostics(symbols, documentedWords);
-      if (diagnostics.length > 0) {
-        diagnosticCollection.set(uri, diagnostics);
-        totalIssues += diagnostics.length;
-      }
-    }
-
-    updateStatusBar(totalIssues);
-    outputChannel.appendLine(
-      `[${new Date().toISOString()}] Scanned ${sourceUris.length} file(s), found ${totalIssues} undocumented export(s).`
+  const gitOk = await isGitRepo(folder.uri.fsPath);
+  if (!gitOk && options.openPanel) {
+    vscode.window.showWarningMessage(
+      'Repo Health: this workspace does not look like a git repository — commit and secret scans will be skipped.'
     );
+  }
 
-    if (interactive) {
-      if (totalIssues === 0) {
-        vscode.window.showInformationMessage('README Drift: no drift detected. Nice.');
-      } else {
-        vscode.window.showWarningMessage(
-          `README Drift: ${totalIssues} exported symbol(s) missing from ${readmePath}. See Problems panel.`
-        );
-      }
-    }
+  const config = vscode.workspace.getConfiguration('repoHealth');
+  const include = config.get<string>('include', '**/*.{ts,tsx,js,jsx,py}');
+  const exclude = config.get<string>('exclude', '**/{node_modules,out,dist,build,.git,venv,.venv,__pycache__}/**');
+  const readmePath = config.get<string>('readmePath', 'README.md');
+  const commitScanCount = config.get<number>('commitScanCount', 30);
+  const secretScanDepth = config.get<number>('secretScanCommitDepth', 50);
+
+  try {
+    const [commits, readmeDrift, staleTodos, secrets, onboarding, fileTypes] = await Promise.all([
+      gitOk ? scanRecentCommits(folder.uri.fsPath, commitScanCount) : Promise.resolve([]),
+      scanReadmeDrift(folder.uri, include, exclude, readmePath),
+      scanStaleTodos(folder.uri, include, exclude),
+      gitOk ? scanForLeakedSecrets(folder.uri, secretScanDepth) : Promise.resolve([]),
+      scanOnboardingChecklist(exclude),
+      scanFileTypeDistribution(exclude)
+    ]);
+
+    const priorHistory = context.workspaceState.get<ScoreHistoryPoint[]>(SCORE_HISTORY_KEY, []);
+    const previousOverall = priorHistory.length ? priorHistory[priorHistory.length - 1].overall : undefined;
+    const score = computeScore(commits, readmeDrift, staleTodos, secrets, onboarding, previousOverall);
+
+    const scoreHistory = [...priorHistory, { timestamp: new Date().toISOString(), overall: score.overall }].slice(
+      -MAX_HISTORY_POINTS
+    );
+    await context.workspaceState.update(SCORE_HISTORY_KEY, scoreHistory);
+
+    const scan: HealthScan = {
+      repoName: folder.name,
+      commits,
+      readmeDrift,
+      staleTodos,
+      secrets,
+      onboarding,
+      fileTypes,
+      scoreHistory,
+      score
+    };
+
+    updateStatusBar(score.overall);
+    panel?.update(scan);
   } catch (err) {
-    outputChannel.appendLine(`Error: ${(err as Error).message}`);
-    if (interactive) {
-      vscode.window.showErrorMessage(`README Drift check failed: ${(err as Error).message}`);
+    updateStatusBar(undefined);
+    if (options.openPanel) {
+      vscode.window.showErrorMessage(`Repo Health scan failed: ${(err as Error).message}`);
     }
   }
 }
 
-async function scanFile(uri: vscode.Uri): Promise<ExportedSymbol[]> {
-  const ext = uri.path.slice(uri.path.lastIndexOf('.'));
-  if (!TS_JS_EXTENSIONS.has(ext) && ext !== '.py') {
-    return [];
-  }
-
-  const bytes = await vscode.workspace.fs.readFile(uri);
-  const text = Buffer.from(bytes).toString('utf8');
-
-  return ext === '.py' ? scanPyFile(text) : scanTsJsFile(text);
-}
-
-function updateStatusBar(issueCount: number | undefined): void {
-  if (issueCount === undefined) {
-    statusBarItem.text = '$(book) README Drift: no README';
+function updateStatusBar(overall: number | undefined): void {
+  if (overall === undefined) {
+    statusBarItem.text = '$(shield) Repo Health';
+    statusBarItem.tooltip = 'Click to scan and view the Repo Health dashboard';
     statusBarItem.backgroundColor = undefined;
     return;
   }
 
-  if (issueCount === 0) {
-    statusBarItem.text = '$(check) README Drift: 0';
-    statusBarItem.backgroundColor = undefined;
-  } else {
-    statusBarItem.text = `$(warning) README Drift: ${issueCount}`;
-    statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
-  }
+  statusBarItem.text = `$(shield) ${overall}`;
+  statusBarItem.tooltip = `Repo Health: ${overall}/100 — click to view the dashboard`;
+  statusBarItem.backgroundColor =
+    overall < 50
+      ? new vscode.ThemeColor('statusBarItem.errorBackground')
+      : overall < 80
+      ? new vscode.ThemeColor('statusBarItem.warningBackground')
+      : undefined;
 }

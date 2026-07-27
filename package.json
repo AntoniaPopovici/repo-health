@@ -1,7 +1,7 @@
 {
-  "name": "readme-drift-detector",
-  "displayName": "README Drift Detector",
-  "description": "Flags exported functions/classes that aren't mentioned in your README, so docs stop drifting from the code.",
+  "name": "repo-health",
+  "displayName": "Repo Health",
+  "description": "A dashboard for repo hygiene: commit message quality, README drift, stale TODOs, possible leaked secrets, and an onboarding checklist.",
   "version": "0.1.0",
   "publisher": "your-publisher-name",
   "engines": {
@@ -18,41 +18,51 @@
   "contributes": {
     "commands": [
       {
-        "command": "readmeDrift.check",
-        "title": "Check README Drift",
-        "category": "README Drift"
+        "command": "repoHealth.showDashboard",
+        "title": "Show Dashboard",
+        "category": "Repo Health"
+      },
+      {
+        "command": "repoHealth.rescan",
+        "title": "Rescan Repository",
+        "category": "Repo Health"
       }
     ],
     "configuration": {
-      "title": "README Drift Detector",
+      "title": "Repo Health",
       "properties": {
-        "readmeDrift.include": {
+        "repoHealth.include": {
           "type": "string",
           "default": "**/*.{ts,tsx,js,jsx,py}",
-          "description": "Glob pattern for source files to scan for exported symbols."
+          "description": "Glob pattern for source files to scan for exported symbols and TODO/FIXME comments."
         },
-        "readmeDrift.exclude": {
+        "repoHealth.exclude": {
           "type": "string",
           "default": "**/{node_modules,out,dist,build,.git,venv,.venv,__pycache__}/**",
           "description": "Glob pattern for files/folders to ignore."
         },
-        "readmeDrift.readmePath": {
+        "repoHealth.readmePath": {
           "type": "string",
           "default": "README.md",
           "description": "Path (relative to the workspace root) of the README file to check against."
         },
-        "readmeDrift.scanOnSave": {
-          "type": "boolean",
-          "default": true,
-          "description": "Automatically re-scan when a source file or the README is saved."
+        "repoHealth.commitScanCount": {
+          "type": "number",
+          "default": 30,
+          "description": "How many recent commits to include in the commit message quality scan."
+        },
+        "repoHealth.secretScanCommitDepth": {
+          "type": "number",
+          "default": 50,
+          "description": "How many recent commits' diffs to scan for possible leaked secrets. Kept small for performance."
         }
       }
     }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "compile": "tsc -p ./ && node ./scripts/copyAssets.js",
+    "watch": "node ./scripts/copyAssets.js && tsc -watch -p ./"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
