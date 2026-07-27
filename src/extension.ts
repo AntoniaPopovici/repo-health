@@ -1,5 +1,3 @@
-// TODO: bump version and `vsce publish` again so the Marketplace listing
-// picks up the README's install-link section (it's currently GitHub-only).
 import * as vscode from 'vscode';
 import { scanRecentCommits } from './modules/commitLinter';
 import { scanReadmeDrift } from './modules/readmeDrift';

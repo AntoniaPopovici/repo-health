@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.1
+
+- README now leads with a Marketplace install link and real dashboard
+  screenshots.
+- Redefined "README drift" for VS Code extensions: undocumented/stale
+  now checks against `package.json`'s declared commands and settings
+  instead of raw TypeScript/Python exports, which was noisy on any
+  multi-file project. Falls back to a plain script/function check on
+  non-extension projects.
+
 ## 0.1.0
 
 Initial release.
