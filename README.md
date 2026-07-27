@@ -4,11 +4,31 @@ A VS Code extension that surfaces repo hygiene issues that are normally
 invisible day-to-day: vague commit messages, README that's drifted out of
 sync with the code, stale TODOs, possible leaked secrets in commit
 history, and a basic contributor-onboarding checklist. Everything shows
-up in one dashboard (a Webview panel), reachable from a status bar item
-that shows your current score at a glance.
+up in one dashboard, reachable from a status bar item that shows your
+current score at a glance.
 
 Everything here runs against `git log`/`git blame` output and the files
 in your workspace — no network calls.
+
+![Dashboard overview](images/dashboard-overview.png)
+
+## Features
+
+**Commit message quality** — scores your recent commits and calls out
+vague ones with a short, specific hint instead of just a red mark.
+
+![Recent commits](images/recent-commits.png)
+
+**README drift, stale TODOs, leaked secrets, and onboarding** — all in
+the same dashboard, each with enough context to act on it directly.
+
+![README drift, stale TODOs, and secrets](images/dashboard-lists.png)
+
+**Always-visible score** — a status bar item shows your current score
+and opens the dashboard on click. It refreshes automatically on save and
+on commit, so it's never stale.
+
+![Status bar item](images/status-bar.png)
 
 ## Running it
 
@@ -21,7 +41,26 @@ Then press `F5` in VS Code to launch an Extension Development Host with
 the extension loaded, open a git repo in that window, and run **"Repo
 Health: Show Dashboard"** from the Command Palette.
 
-## What it does, module by module
+## Getting to the dashboard
+
+The status bar item (bottom left, `$(shield) <score>`) is always visible
+once the extension activates in a git workspace — colored red/yellow by
+score band, click to open the dashboard. It populates itself shortly
+after startup and refreshes on source/README saves and on commits or
+branch switches (watches `.git/HEAD`). `repoHealth.showDashboard` and
+`repoHealth.rescan` are also available from the Command Palette.
+
+## Settings
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| `repoHealth.include` | `**/*.{ts,tsx,js,jsx,py}` | Glob of source files scanned for exports and TODO/FIXME. |
+| `repoHealth.exclude` | `**/{node_modules,out,dist,build,.git,venv,.venv,__pycache__}/**` | Glob of paths to ignore. |
+| `repoHealth.readmePath` | `README.md` | README file to check against, relative to the workspace root. |
+| `repoHealth.commitScanCount` | `30` | How many recent commits to score for the dashboard. |
+| `repoHealth.secretScanCommitDepth` | `50` | How many recent commits' diffs to scan for possible leaked secrets. |
+
+## How each module works
 
 Each module is simple and tunable on purpose — you should be able to read
 the heuristic in five minutes and adjust it.
@@ -107,16 +146,7 @@ penalty for any hit), onboarding completeness (15%). Tune the weights
 freely. The dashboard also shows a trend versus your previous scan
 (stored in workspace state, so it persists across dashboard opens).
 
-## Getting to the dashboard
-
-A status bar item (bottom left, `$(shield) <score>`) is always visible
-once the extension activates in a git workspace — colored red/yellow by
-score band, click to open the dashboard. It populates itself shortly
-after startup and refreshes on source/README saves and on commits or
-branch switches (watches `.git/HEAD`). `repoHealth.showDashboard` and
-`repoHealth.rescan` are also available from the Command Palette.
-
-## Dashboard (`src/webview/`)
+### Dashboard (`src/webview/`)
 
 A single Webview panel styled after GitHub's dark theme (Primer-ish
 palette — background `#0d1117`, panel `#161b22`, borders
@@ -137,16 +167,6 @@ Besides the score/commits/drift/TODOs/secrets/onboarding sections, a
   scanned commit range.
 - **README drift breakdown**: undocumented vs. stale as a bar comparison.
 - **File types distribution**: file counts by extension across the repo.
-
-## Settings
-
-| Setting | Default | Description |
-| --- | --- | --- |
-| `repoHealth.include` | `**/*.{ts,tsx,js,jsx,py}` | Glob of source files scanned for exports and TODO/FIXME. |
-| `repoHealth.exclude` | `**/{node_modules,out,dist,build,.git,venv,.venv,__pycache__}/**` | Glob of paths to ignore. |
-| `repoHealth.readmePath` | `README.md` | README file to check against, relative to the workspace root. |
-| `repoHealth.commitScanCount` | `30` | How many recent commits to score for the dashboard. |
-| `repoHealth.secretScanCommitDepth` | `50` | How many recent commits' diffs to scan for possible leaked secrets. |
 
 ## Known limitations (MVP)
 
