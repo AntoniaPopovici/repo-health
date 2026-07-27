@@ -1,7 +1,9 @@
 .vscode/**
+.claude/**
 src/**
 scripts/**
 .gitignore
 tsconfig.json
 **/*.map
 node_modules/**
+images/icon.svg

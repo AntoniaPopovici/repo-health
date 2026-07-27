@@ -3,7 +3,24 @@
   "displayName": "Repo Health",
   "description": "A dashboard for repo hygiene: commit message quality, README drift, stale TODOs, possible leaked secrets, and an onboarding checklist.",
   "version": "0.1.0",
-  "publisher": "your-publisher-name",
+  "publisher": "antoniaadelina",
+  "icon": "images/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AntoniaPopovici/repo-health.git"
+  },
+  "bugs": {
+    "url": "https://github.com/AntoniaPopovici/repo-health/issues"
+  },
+  "keywords": [
+    "git",
+    "commit",
+    "readme",
+    "todo",
+    "secrets",
+    "onboarding",
+    "dashboard"
+  ],
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -67,6 +84,7 @@
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.9.2",
     "typescript": "^5.4.0"
   }
 }
